@@ -45,10 +45,9 @@ torch.set_default_device(device)
 locale.getpreferredencoding = lambda: "UTF-8"
 
 
-def train(model, iters, optimizer, criterion, clip):
+def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
-    iterator = iters['iters']
     for i, batch in enumerate(iterator):
         x,trg = batch[0], batch[1]
         optimizer.zero_grad()
@@ -65,11 +64,10 @@ def train(model, iters, optimizer, criterion, clip):
     return epoch_loss / len(iterator)
 
 
-def evaluate(model, iters, criterion):
+def evaluate(model, iterator, criterion, decode_map):
     model.eval()
     epoch_loss = 0
     Y_actual, Y_pred = list(),list()
-    iterator = iters['iters']
     with torch.no_grad():
         for i, batch in enumerate(iterator):
             x,trg = batch[0], batch[1]
@@ -82,8 +80,8 @@ def evaluate(model, iters, criterion):
             
             for trg_j,out_j in zip(trg,output):
                 try :
-                    trg_val = idx_to_val(trg_j,iters['decode_map'])
-                    out_val = idx_to_val(out_j.max(dim=1)[1],iters['decode_map'])
+                    trg_val = idx_to_val(trg_j,decode_map)
+                    out_val = idx_to_val(out_j.max(dim=1)[1],decode_map)
                     Y_pred.append(out_val)
                     Y_actual.append(trg_val)
                 except : pass
@@ -92,14 +90,16 @@ def evaluate(model, iters, criterion):
 
     return epoch_loss / len(iterator), F_metric.r2_score(Y_pred,Y_actual).detach().cpu().numpy()
   
-def run(model,train_config,train_iter,valid_iter,total_epoch,warmup,best_loss,save_dir,expt_name):
+def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_name):
     train_losses, valid_losses, train_scores, valid_scores = [], [], [], []
     optimizer, scheduler, criterion, clip = *train_config,
     best_epoch=0
+    train_iter,valid_iter = iter_dict['iters']['trn'],iter_dict['iters']['vld']
+    decode_map = iter_dict['decode_map']
     for step in range(total_epoch):
 
         train_loss, train_score = train(model, train_iter, optimizer, criterion, clip)
-        valid_loss, valid_score = evaluate(model, valid_iter, criterion)
+        valid_loss, valid_score = evaluate(model, valid_iter, criterion,decode_map)
 
         if step > warmup:
             scheduler.step(valid_loss)
