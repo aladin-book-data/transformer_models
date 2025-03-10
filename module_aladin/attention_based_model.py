@@ -197,7 +197,7 @@ class BasicEncoder(nn.Module):
                                                        dropout = dropout)
                                               for _ in range(n_layers)])
 
-  def forward(self,x):
+  def forward(self,x,src_mask=None):
     pos_encoding = self.dropout(self.pos_encoding(x))
     batch_size,_,_ = x.size()
     
@@ -205,25 +205,25 @@ class BasicEncoder(nn.Module):
     x = x + pos_encoding
     
     for encoder in self.encoding_layers:
-      x,attention_score = encoder(x,None)
+      x,attention_score = encoder(x,src_mask)
     
     
     return x
 
 class EncoderWithEmbedding(BasicEncoder):
-  def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size=CORPUS_SIZE):
+  def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size=CORPUS_SIZE,pad_idx=0):
     super().__init__(d_model,head,d_ff,max_len,dropout,n_layers,device)
-    self.input_emb = nn.Embedding(corpus_size,d_model,padding_idx = None)
+    self.input_emb = nn.Embedding(corpus_size,d_model,padding_idx = pad_idx)
 
-  def forward(self,x):
+  def forward(self,x,src_mask):
     input_emb = self.dropout(self.input_emb(x))
-    return super().forward(input_emb)
+    return super().forward(input_emb,src_mask)
 
 class Decoder(nn.Module):
-  def __init__(self,d_model,head,d_ff,max_len,padding_idx,dropout,n_layers,device,corpus_size=CORPUS_SIZE): 
+  def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size=CORPUS_SIZE,pad_idx=0): 
     super().__init__()
 
-    self.output_emb = nn.Embedding(corpus_size,d_model,padding_idx=padding_idx)
+    self.output_emb = nn.Embedding(corpus_size,d_model,padding_idx=pad_idx)
     self.pos_encoding = PositionalEncoding(d_model,max_len,device)
     self.dropout = nn.Dropout(p=dropout)
 
