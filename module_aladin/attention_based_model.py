@@ -168,9 +168,9 @@ class DecoderLayer(nn.Module):
     self.layerNorm3 = nn.LayerNorm(d_model)
     self.dropout = nn.Dropout(p=dropout)
 
-  def forward(self,x,memory,padding_mask):
+  def forward(self,x,memory,look_ahead_mask, padding_mask):
     residual = x
-    x,_  = self.attention1(q=x,k=x,v=x,mask=padding_mask)
+    x,_  = self.attention1(q=x,k=x,v=x,mask=look_ahead_mask)
     x = self.dropout(x)+residual
     x = self.layerNorm1(x)
 
@@ -186,7 +186,7 @@ class DecoderLayer(nn.Module):
     return x
 
 class BasicEncoder(nn.Module):
-  def __init__(self,n_input,d_model,head,d_ff,max_len,dropout,n_layers,device): 
+  def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device): 
     super().__init__()
 
     self.pos_encoding = PositionalEncoding(d_model,max_len,device)
@@ -211,14 +211,41 @@ class BasicEncoder(nn.Module):
     return x
 
 class EncoderWithEmbedding(BasicEncoder):
-  def __init__(self,n_input,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size=CORPUS_SIZE):
-    super().__init__(n_input,d_model,head,d_ff,max_len,dropout,n_layers,device)
+  def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size=CORPUS_SIZE):
+    super().__init__(d_model,head,d_ff,max_len,dropout,n_layers,device)
     self.input_emb = nn.Embedding(corpus_size,d_model,padding_idx = None)
 
   def forward(self,x):
     input_emb = self.dropout(self.input_emb(x))
     return super().forward(input_emb)
 
+class Decoder(nn.Module):
+  def __init__(self,d_model,head,d_ff,max_len,padding_idx,dropout,n_layers,device,corpus_size=CORPUS_SIZE): 
+    super().__init__()
+
+    self.output_emb = nn.Embedding(corpus_size,d_model,padding_idx=padding_idx)
+    self.pos_encoding = PositionalEncoding(d_model,max_len,device)
+    self.dropout = nn.Dropout(p=dropout)
+
+    self.encoding_layers = nn.ModuleList([DecoderLayer(d_model=d_model,
+                                                       head = head, d_ff=d_ff,
+                                                       dropout = dropout)
+                                              for _ in range(n_layers)])
+    self.linear = nn.Linear(d_model,corpus_size)
+
+  def forward(self,x,memory,look_ahead_mask,padding_mask):
+    output_emb = self.output_emb(x)
+    pos_encoding = self.pos_encoding(x)
+    batch_size,_,_ = x.size()
+    
+    pos_encoding=pos_encoding.unsqueeze(dim=0).repeat(batch_size,1,1)
+    x = self.dropout(output_emb + pos_encoding)
+    
+    for decoder in self.encoding_layers:
+      x = decoder(x, memory,look_ahead_mask,padding_mask)
+    
+    
+    return  self.linear(x)
 
 
 

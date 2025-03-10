@@ -30,8 +30,9 @@ os.environ["TORCH_USE_CUDA_DSA"] = '1'
 from torch.utils.data import DataLoader
 
 class DataLoaderDict :
-  def __init__(self,dataset):
+  def __init__(self,dataset,decode_map):
     self.dataset = dataset
+    self.decode_map = decode_map
   def make_iter(self,batch_size):
     return {
         mode : DataLoader(data,batch_size)#,num_workers = 4)
@@ -52,17 +53,25 @@ def make_cropped_data(crop_idx, X):
         X = np.hstack([X[:,:i],X[:,i+1:]])
     return X
 
-def generate_dataset(data_dict,crop_idx=[-1]):
+def generate_dataset(data_dict):
   dataset = defaultdict(dict)
   for mode, data in data_dict.items():
-    X, y = data['X'], data['y']
-#    X = make_cropped_data(crop_idx,X)
+    X, y = data['X'], data['y']['encoded']
     X_torch, y_torch = torch.tensor(X),torch.tensor(y)
     dataset[mode] = TensorDataset(X_torch.to(torch.float32),y_torch.to(torch.float32))
-  return dataset
+  return dataset,data_dict['tst']['y']['decode_map']
 
 def load_dataloader_iters(data_dict,batch_size):
-  dataset = generate_dataset(data_dict)
-  loader = DataLoaderDict(dataset)
+  dataset,decode_map = generate_dataset(data_dict)
+  loader = DataLoaderDict(dataset,decode_map)
   iter_dict = loader.make_iter(batch_size)
   return iter_dict
+
+def idx_to_val(data,decode_map,pad_idx=0):
+  for i,ele in enumerate(data):
+    if ele == pad_idx : break
+  trimmed = data[:i][::-1]
+  val = list(map(lambda x : str(decode_map[x]),trimmed))
+  return int(''.join(val))
+#  try : return int(''.join(val))
+#  except : return 0
