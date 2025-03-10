@@ -30,9 +30,8 @@ os.environ["TORCH_USE_CUDA_DSA"] = '1'
 from torch.utils.data import DataLoader
 
 class DataLoaderDict :
-  def __init__(self,dataset,decode_map):
+  def __init__(self,dataset):
     self.dataset = dataset
-    self.decode_map = decode_map
   def make_iter(self,batch_size):
     return {
         mode : DataLoader(data,batch_size)#,num_workers = 4)
@@ -63,9 +62,9 @@ def generate_dataset(data_dict):
 
 def load_dataloader_iters(data_dict,batch_size):
   dataset,decode_map = generate_dataset(data_dict)
-  loader = DataLoaderDict(dataset,decode_map)
+  loader = DataLoaderDict(dataset)
   iter_dict = loader.make_iter(batch_size)
-  return iter_dict
+  return iter_dict,decode_map
 
 def idx_to_val(data,decode_map,pad_idx=0):
   for i,ele in enumerate(data):

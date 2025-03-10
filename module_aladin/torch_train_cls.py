@@ -30,7 +30,7 @@ import locale
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from torcheval.metrics import functional as F_metric
 
-from module_aladin.load_data import loader,idx_to_val
+from module_aladin.load_data_cls import idx_to_val
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
