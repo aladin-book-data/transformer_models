@@ -45,9 +45,10 @@ torch.set_default_device(device)
 locale.getpreferredencoding = lambda: "UTF-8"
 
 
-def train(model, iterator, optimizer, criterion, clip):
+def train(model, iters, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
+    iterator = iters['iters']
     for i, batch in enumerate(iterator):
         x,trg = batch[0], batch[1]
         optimizer.zero_grad()
@@ -64,10 +65,11 @@ def train(model, iterator, optimizer, criterion, clip):
     return epoch_loss / len(iterator)
 
 
-def evaluate(model, iterator, criterion):
+def evaluate(model, iters, criterion):
     model.eval()
     epoch_loss = 0
     Y_actual, Y_pred = list(),list()
+    iterator = iters['iters']
     with torch.no_grad():
         for i, batch in enumerate(iterator):
             x,trg = batch[0], batch[1]
@@ -80,8 +82,8 @@ def evaluate(model, iterator, criterion):
             
             for trg_j,out_j in zip(trg,output):
                 try :
-                    trg_val = idx_to_val(trg_j,loader.decode_map)
-                    out_val = idx_to_val(out_j.max(dim=1)[1],loader.decode_map)
+                    trg_val = idx_to_val(trg_j,iters['decode_map'])
+                    out_val = idx_to_val(out_j.max(dim=1)[1],iters['decode_map'])
                     Y_pred.append(out_val)
                     Y_actual.append(trg_val)
                 except : pass

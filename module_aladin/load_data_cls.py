@@ -64,7 +64,7 @@ def load_dataloader_iters(data_dict,batch_size):
   dataset,decode_map = generate_dataset(data_dict)
   loader = DataLoaderDict(dataset)
   iter_dict = loader.make_iter(batch_size)
-  return iter_dict,decode_map
+  return {'iters' : iter_dict, 'decode_map' : decode_map}
 
 def idx_to_val(data,decode_map,pad_idx=0):
   for i,ele in enumerate(data):
