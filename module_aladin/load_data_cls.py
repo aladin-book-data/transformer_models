@@ -42,6 +42,9 @@ import torch
 from torch.utils.data import TensorDataset
 from collections import defaultdict
 
+OUT_SOS = '[sos]' 
+OUT_EOS = '[eos]' 
+
 def polish_idx(length,crop_idx):
     crop_idx2 = list(map(lambda x : length + x if x < 0 else x, crop_idx))
     return sorted(crop_idx2,reverse=True)
@@ -67,10 +70,10 @@ def load_dataloader_iters(data_dict,batch_size,data_key='coded',info_key='info')
   iter_dict = loader.make_iter(batch_size)
   return {'iters' : iter_dict, 'info' : info}
 
-def idx_to_val(data,decode_map,pad_idx=0):
-  for i,ele in enumerate(data):
-    if ele == pad_idx : break
-  trimmed = data[:i][::-1]
+def idx_to_val(data,decode_map,eos_tkn=0):
+  for i,ele in enumerate(data[1:]):
+    if ele == eos_tkn: break
+  trimmed = data[1:i][::-1]
   val = list(map(lambda x : str(decode_map[x]),trimmed))
 #  print(data,val)
 #  return int(''.join(val))

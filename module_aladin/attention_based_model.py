@@ -227,7 +227,7 @@ class Decoder(nn.Module):
     self.pos_encoding = PositionalEncoding(d_model,max_len,device)
     self.dropout = nn.Dropout(p=dropout)
 
-    self.decoding_layers = nn.ModuleList([DecoderLayer(d_model=d_model,
+    self.encoding_layers = nn.ModuleList([DecoderLayer(d_model=d_model,
                                                        head = head, d_ff=d_ff,
                                                        dropout = dropout)
                                               for _ in range(n_layers)])
@@ -241,7 +241,7 @@ class Decoder(nn.Module):
     pos_encoding=pos_encoding.unsqueeze(dim=0).repeat(batch_size,1,1)
     x = self.dropout(output_emb + pos_encoding)
     
-    for decoder in self.decoding_layers:
+    for decoder in self.encoding_layers:
       x = decoder(x, memory,look_ahead_mask,padding_mask)
     
     

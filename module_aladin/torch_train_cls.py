@@ -44,7 +44,6 @@ torch.set_default_device(device)
 
 locale.getpreferredencoding = lambda: "UTF-8"
 
-
 def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
@@ -63,85 +62,76 @@ def train(model, iterator, optimizer, criterion, clip):
 
     return epoch_loss / len(iterator)
 
-
-def evaluate(model, iterator, criterion, decode_map):
+def evaluate(model,iterator,criterion,mode='evaluate'):
     model.eval()
     epoch_loss = 0
     Y_actual, Y_pred = list(),list()
+    
     with torch.no_grad():
-        for i, batch in enumerate(iterator):
+        for batch in enumerate(iterator):
             x,trg = batch[0], batch[1].to(torch.long)
-            output = model(x,trg)
-            y_pred = output.contiguous().view(-1,output.shape[-1])
+            if mode == 'inference' : y_pred = model.infer(model,x) 
+            else : y_pred = model(x,trg)
+            
+            y_pred = y_pred.contiguous()
             y_actual = trg.contiguous().view(-1)
             loss = criterion(y_pred,y_actual)
-
             epoch_loss += loss.item()
+            outputs = y_pred.max(dim=-1)
             
-            for trg_j,out_j in zip(trg,output):
-                trg_val = idx_to_val(trg_j.detach().cpu().numpy(),decode_map)
-                out_val = idx_to_val(out_j.max(dim=1)[1].detach().cpu().numpy(),decode_map)
+            for trg_j,out_j in zip(trg,outputs):
+                trg_val = idx_to_val(trg_j.detach().cpu().numpy(),
+                                     model.decode_map,model.eos_tkn)
+                out_val = idx_to_val(out_j.detach().cpu().numpy(),
+                                     model.decode_map,model.eos_tkn)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
-                
-
+            Y_pred.append(y_pred)
+            Y_actual.append(y_actual)
     Y_actual, Y_pred = np.array(Y_actual), np.array(Y_pred)
-
-    return epoch_loss / len(iterator), [r2_score(Y_actual,Y_pred),rmse(Y_actual,Y_pred),mape(Y_actual,Y_pred)], (Y_actual, Y_pred)
     
-    #F_metric.r2_score(Y_pred,Y_actual).detach().cpu().numpy()
+    return Y_actual, Y_pred, epoch_loss
+
+
+def evaluate_w_score(model,iterator,criterion):
+    
+    Y_actual, Y_pred, epoch_loss = evaluate(model,iterator,criterion)
+
+    return (Y_actual, Y_pred), epoch_loss/ len(iterator), {'r2':r2_score(Y_actual,Y_pred),
+                                        'rmse':rmse(Y_actual,Y_pred),
+                                        'mape':mape(Y_actual,Y_pred)}, 
+
   
 def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_name):
-    train_losses, valid_losses, train_scores, valid_scores = [], [], [], []
+    train_losses, valid_losses, valid_scores = [], [], []
+    lr_list=[]
     optimizer, scheduler, criterion, clip = *train_config,
     best_epoch=0
     train_iter,valid_iter = iter_dict['iters']['trn'],iter_dict['iters']['vld']
-    decode_map = iter_dict['info']['y']['decode_map']
+    
     for step in range(total_epoch):
 
         train_loss = train(model, train_iter, optimizer, criterion, clip)
-        valid_loss, valid_score, valid_rslt = evaluate(model, valid_iter, criterion,decode_map)
+        _,valid_loss, valid_score = evaluate_w_score(model,valid_iter,criterion)
 
-        if step > warmup:
-            scheduler.step(valid_loss)
+        if step > warmup: scheduler.step(valid_loss)
 
-        train_loss=math.sqrt(train_loss)
-        valid_loss=math.sqrt(valid_loss)
-
+        last_lr = scheduler.get_last_lr()[0]
         train_losses.append(train_loss)
         valid_losses.append(valid_loss)
         valid_scores.append(valid_score)
+        lr_list.append(last_lr)
 
         if valid_loss < best_loss:
             best_loss,best_epoch = valid_loss,step+1
             torch.save(model, os.path.join(save_dir,'best_{0}.pt'.format(expt_name)))
 
-        print(f'Epoch: {step + 1:>5}\t\tlr: {scheduler.get_last_lr()[0]:.8f}')
-        val_score_str = ' '.join([f'{a:.3f}' for a in valid_score])
+        print(f'Epoch: {step + 1:>5}\t\tlr: {last_lr:.8f}')
+        val_score_str = ' '.join([f'{v:.3f}' for k,v in valid_score.items()])
         print(f'\tTrain Loss: {train_loss:.3f}\tVal Loss: {valid_loss:.3f}\tVal Score: {val_score_str}')
 
     print('Best Epoch: ',best_epoch)
-    return model,train_losses,valid_losses,train_scores, valid_scores,best_epoch
-
-def get_test_rslt(model, iterator, criterion,device):
-    model.eval()
-    epoch_loss = 0
-    Y_actual, Y_pred = list(),list()
-    with torch.no_grad():
-        for i, batch in enumerate(iterator):
-            x,y_actual = batch[0].to(device), batch[1].to(device)
-            x,y_actual = x.to(torch.float32),y_actual.to(torch.float32)
-            y_pred = model(x).reshape(-1)
-            loss = criterion(y_pred,y_actual)
-
-            epoch_loss += loss.item()
-
-            score_list = list()
-            Y_pred.append(y_pred)
-            Y_actual.append(y_actual)
-
-    Y_actual, Y_pred = torch.cat(Y_actual), torch.cat(Y_pred).reshape(-1)
-    return Y_pred.detach().cpu().numpy(),Y_actual.detach().cpu().numpy()
+    return model,train_losses,valid_losses, valid_scores,best_epoch,lr_list
 
 def test_n_plot(model, iterator, criterion,device,scatter=True,**kwargs):
     Y_rslt,Y_truth = get_test_rslt(model,iterator,criterion,device)
@@ -152,7 +142,7 @@ def test_n_plot(model, iterator, criterion,device,scatter=True,**kwargs):
       g = sns.jointplot(x=Y_truth, y=Y_rslt, xlim = (0,60000), ylim = (0,60000),**kwargs)
     score = r2_score(Y_truth,Y_rslt)
     mape = mean_absolute_percentage_error(Y_truth,Y_rslt)
-    print(math.sqrt(mse(Y_truth,Y_rslt)), "\tr2 : ",score,"\tmape : ",mape)
+    print(rmse(Y_truth,Y_rslt), "\tr2 : ",score,"\tmape : ",mape)
     return fig,ax
 
 def plot_err_dist(y_pred,y_true,percent=False,**kwargs):
@@ -187,7 +177,7 @@ def initialize_weights(m):
     if hasattr(m, 'weight') and m.weight.dim() > 1:
         nn.init.kaiming_uniform(m.weight.data)
     
-def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,device,cls_freq=None):
+def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,cls_freq=None):
   print(f'The model has {count_parameters(model):,} trainable parameters')
   model.apply(initialize_weights)
   optimizer = Adam(params=model.parameters(),
