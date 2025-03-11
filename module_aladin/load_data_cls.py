@@ -55,6 +55,7 @@ def make_cropped_data(crop_idx, X):
 def generate_dataset(data_dict,data_key,info_key='info'):
   dataset = defaultdict(dict)
   for mode, data in data_dict.items():
+    if mode == info_key : continue
     X, y = data['X'], data['y'][data_key]
     X_torch, y_torch = torch.tensor(X),torch.tensor(y)
     dataset[mode] = TensorDataset(X_torch.to(torch.float32),y_torch.to(torch.float32))
@@ -64,8 +65,7 @@ def load_dataloader_iters(data_dict,batch_size,data_key='coded',info_key='info')
   dataset,info = generate_dataset(data_dict,data_key,info_key)
   loader = DataLoaderDict(dataset)
   iter_dict = loader.make_iter(batch_size)
-  rslt = {'iters' : iter_dict, 'info' : info}
-  return 
+  return {'iters' : iter_dict, 'info' : info}
 
 def idx_to_val(data,decode_map,pad_idx=0):
   for i,ele in enumerate(data):

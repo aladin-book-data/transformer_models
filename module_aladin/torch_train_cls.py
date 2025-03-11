@@ -51,9 +51,9 @@ def train(model, iterator, optimizer, criterion, clip):
     for i, batch in enumerate(iterator):
         x,trg = batch[0], batch[1].to(torch.long)
         optimizer.zero_grad()
-        output = model(x,trg[:,:-1])
+        output = model(x,trg)
         y_pred = output.contiguous().view(-1,output.shape[-1])
-        y_actual = trg[:,1:].contiguous().view(-1)
+        y_actual = trg.contiguous().view(-1)
         loss = criterion(y_pred,y_actual)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -71,9 +71,9 @@ def evaluate(model, iterator, criterion, decode_map):
     with torch.no_grad():
         for i, batch in enumerate(iterator):
             x,trg = batch[0], batch[1].to(torch.long)
-            output = model(x,trg[:,:-1])
+            output = model(x,trg)
             y_pred = output.contiguous().view(-1,output.shape[-1])
-            y_actual = trg[:,1:].contiguous().view(-1)
+            y_actual = trg.contiguous().view(-1)
             loss = criterion(y_pred,y_actual)
 
             epoch_loss += loss.item()
@@ -96,7 +96,7 @@ def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_
     optimizer, scheduler, criterion, clip = *train_config,
     best_epoch=0
     train_iter,valid_iter = iter_dict['iters']['trn'],iter_dict['iters']['vld']
-    decode_map = iter_dict['decode_map']
+    decode_map = iter_dict['info']['y']['decode_map']
     for step in range(total_epoch):
 
         train_loss = train(model, train_iter, optimizer, criterion, clip)
@@ -112,7 +112,6 @@ def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_
         valid_losses.append(valid_loss)
         valid_scores.append(valid_score)
 
-        if step%20==0 : print(zip(valid_rslt))
         if valid_loss < best_loss:
             best_loss,best_epoch = valid_loss,step+1
             torch.save(model, os.path.join(save_dir,'best_{0}.pt'.format(expt_name)))
@@ -188,7 +187,7 @@ def initialize_weights(m):
     if hasattr(m, 'weight') and m.weight.dim() > 1:
         nn.init.kaiming_uniform(m.weight.data)
     
-def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience):
+def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,device,cls_freq=None):
   print(f'The model has {count_parameters(model):,} trainable parameters')
   model.apply(initialize_weights)
   optimizer = Adam(params=model.parameters(),
@@ -201,5 +200,10 @@ def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience):
                                                    factor=factor,
                                                    patience=patience)
 
-  criterion = nn.CrossEntropyLoss()
+  #criterion = nn.CrossEntropyLoss()
+  if cls_freq is not None :
+      normedWeights = [1 - (x / sum(cls_freq)) for x in cls_freq]
+      normedWeights = torch.FloatTensor(normedWeights).to(device)
+  else : normedWeights = None
+  criterion = nn.CrossEntropyLoss(normedWeights)
   return(model,optimizer,scheduler,criterion)

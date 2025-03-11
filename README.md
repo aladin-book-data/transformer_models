@@ -674,8 +674,10 @@
 4. [BE24][(BE24)] : Bryce and Eddie, 딥 러닝을 이용한 자연어 처리 입문, Wikidocs, 2024
 5. [Monte Carlo Method, Wikipedia](https://en.wikipedia.org/wiki/Monte_Carlo_method)
 6. [Linear regression, Wikipedia](https://en.wikipedia.org/wiki/Linear_regression)
+7. [L18][(L18)]: Lynn-Evans, S. (2018, September 27). How to code The Transformer in Pytorch. Towards Data Science.
 
 [(OLPJ24)]:https://github.com/kdt-3-second-Project/aladin_usedbook "OLPJ24"
 [(VSPU17)]:https://arxiv.org/abs/1706.03762 "VSPU17"
 [(K19)]:https://github.com/hyunwoongko/transformer/tree/master "K19"
 [(BE24)]:https://wikidocs.net/book/2155 "BE24"
+[(L18)]:https://medium.com/towards-data-science/how-to-code-the-transformer-in-pytorch-24db27c8f9ec "18"
