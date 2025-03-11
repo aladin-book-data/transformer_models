@@ -52,26 +52,17 @@ def make_cropped_data(crop_idx, X):
         X = np.hstack([X[:,:i],X[:,i+1:]])
     return X
 
-def generate_dataset(data_dict,data_key,map_key='decode_map'):
+def generate_dataset(data_dict,crop_idx=[-1]):
   dataset = defaultdict(dict)
   for mode, data in data_dict.items():
-    X, y = data['X'], data['y'][data_key]
+    X, y = data['X'], data['y']
+#    X = make_cropped_data(crop_idx,X)
     X_torch, y_torch = torch.tensor(X),torch.tensor(y)
     dataset[mode] = TensorDataset(X_torch.to(torch.float32),y_torch.to(torch.float32))
-  return dataset,data_dict['tst']['y'][map_key]
+  return dataset
 
-def load_dataloader_iters(data_dict,batch_size,data_key='coded',map_key='decode_map'):
-  dataset,decode_map = generate_dataset(data_dict,data_key,map_key)
+def load_dataloader_iters(data_dict,batch_size):
+  dataset = generate_dataset(data_dict)
   loader = DataLoaderDict(dataset)
   iter_dict = loader.make_iter(batch_size)
-  return {'iters' : iter_dict, 'decode_map' : decode_map}
-
-def idx_to_val(data,decode_map,pad_idx=0):
-  for i,ele in enumerate(data):
-    if ele == pad_idx : break
-  trimmed = data[:i][::-1]
-  val = list(map(lambda x : str(decode_map[x]),trimmed))
-#  print(data,val)
-#  return int(''.join(val))
-  try : return int(''.join(val))
-  except : return 0
+  return iter_dict

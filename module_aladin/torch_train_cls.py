@@ -17,7 +17,7 @@ import os
 
 from sklearn.metrics import r2_score
 from sklearn.metrics import mean_absolute_percentage_error as mape
-from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import root_mean_squared_error as rmse
 from sklearn.metrics import mean_squared_log_error as msle
 
 import torch
@@ -49,7 +49,7 @@ def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
     for i, batch in enumerate(iterator):
-        x,trg = batch[0], batch[1]
+        x,trg = batch[0], batch[1].to(torch.long)
         optimizer.zero_grad()
         output = model(x,trg[:,:-1])
         y_pred = output.contiguous().view(-1,output.shape[-1])
@@ -70,7 +70,7 @@ def evaluate(model, iterator, criterion, decode_map):
     Y_actual, Y_pred = list(),list()
     with torch.no_grad():
         for i, batch in enumerate(iterator):
-            x,trg = batch[0], batch[1]
+            x,trg = batch[0], batch[1].to(torch.long)
             output = model(x,trg[:,:-1])
             y_pred = output.contiguous().view(-1,output.shape[-1])
             y_actual = trg[:,1:].contiguous().view(-1)
@@ -79,16 +79,17 @@ def evaluate(model, iterator, criterion, decode_map):
             epoch_loss += loss.item()
             
             for trg_j,out_j in zip(trg,output):
-                try :
-                    trg_val = idx_to_val(trg_j,decode_map)
-                    out_val = idx_to_val(out_j.max(dim=1)[1],decode_map)
-                    Y_pred.append(out_val)
-                    Y_actual.append(trg_val)
-                except : pass
+                trg_val = idx_to_val(trg_j.detach().cpu().numpy(),decode_map)
+                out_val = idx_to_val(out_j.max(dim=1)[1].detach().cpu().numpy(),decode_map)
+                Y_pred.append(out_val)
+                Y_actual.append(trg_val)
+                
 
-    Y_actual, Y_pred = torch.cat(Y_actual), torch.cat(Y_pred).reshape(-1)
+    Y_actual, Y_pred = np.array(Y_actual), np.array(Y_pred)
 
-    return epoch_loss / len(iterator), F_metric.r2_score(Y_pred,Y_actual).detach().cpu().numpy()
+    return epoch_loss / len(iterator), [r2_score(Y_actual,Y_pred),rmse(Y_actual,Y_pred),mape(Y_actual,Y_pred)], (Y_actual, Y_pred)
+    
+    #F_metric.r2_score(Y_pred,Y_actual).detach().cpu().numpy()
   
 def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_name):
     train_losses, valid_losses, train_scores, valid_scores = [], [], [], []
@@ -98,8 +99,8 @@ def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_
     decode_map = iter_dict['decode_map']
     for step in range(total_epoch):
 
-        train_loss, train_score = train(model, train_iter, optimizer, criterion, clip)
-        valid_loss, valid_score = evaluate(model, valid_iter, criterion,decode_map)
+        train_loss = train(model, train_iter, optimizer, criterion, clip)
+        valid_loss, valid_score, valid_rslt = evaluate(model, valid_iter, criterion,decode_map)
 
         if step > warmup:
             scheduler.step(valid_loss)
@@ -109,15 +110,16 @@ def run(model,train_config,iter_dict,total_epoch,warmup,best_loss,save_dir,expt_
 
         train_losses.append(train_loss)
         valid_losses.append(valid_loss)
-        train_scores.append(train_score)
         valid_scores.append(valid_score)
 
+        if step%20==0 : print(zip(valid_rslt))
         if valid_loss < best_loss:
             best_loss,best_epoch = valid_loss,step+1
             torch.save(model, os.path.join(save_dir,'best_{0}.pt'.format(expt_name)))
 
         print(f'Epoch: {step + 1:>5}\t\tlr: {scheduler.get_last_lr()[0]:.8f}')
-        print(f'\tTrain Loss: {train_loss:.3f}\tTrain Score: {train_score:.3f}\tVal Loss: {valid_loss:.3f}\tVal Score: {valid_score:.3f}')
+        val_score_str = ' '.join([f'{a:.3f}' for a in valid_score])
+        print(f'\tTrain Loss: {train_loss:.3f}\tVal Loss: {valid_loss:.3f}\tVal Score: {val_score_str}')
 
     print('Best Epoch: ',best_epoch)
     return model,train_losses,valid_losses,train_scores, valid_scores,best_epoch
@@ -199,5 +201,5 @@ def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience):
                                                    factor=factor,
                                                    patience=patience)
 
-  criterion = nn.MSELoss()
+  criterion = nn.CrossEntropyLoss()
   return(model,optimizer,scheduler,criterion)
