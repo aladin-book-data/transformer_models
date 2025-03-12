@@ -54,9 +54,9 @@ class Transformer(nn.Module):
     decode_map = info['y']['decode_map']['map']
     encode_map = {v:k for k,v in decode_map.items()}
     self.decode_map = decode_map
-    self.sos_idx = encode_map[info['y']['tkn']['sos']]
-    self.eos_idx = encode_map[info['y']['tkn']['eos']]
-    self.pad_idx = encode_map[info['y']['tkn']['pad']]    
+    self.sos_idx = encode_map[info['y']['tkn']['[SOS]']]
+    self.eos_idx = encode_map[info['y']['tkn']['[EOS]']]
+    self.pad_idx = encode_map[info['y']['tkn']['[PAD]']]    
     
   def make_pad_mask(self,data,dim):
     pad_mask = (data!=self.pad_idx).unsqueeze(1).unsqueeze(dim)
