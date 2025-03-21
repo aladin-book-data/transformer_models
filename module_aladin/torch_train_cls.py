@@ -50,9 +50,9 @@ def train(model, iterator, optimizer, criterion, clip):
     for i, batch in enumerate(iterator):
         x,trg = batch[0], batch[1].to(torch.long)
         optimizer.zero_grad()
-        output = model(x,trg[:,1:])
+        output = model(x,trg[:,:-1])
         y_pred = output.contiguous().view(-1,output.shape[-1])
-        y_actual = trg[:,:-1].contiguous().view(-1)
+        y_actual = trg[:,1:].contiguous().view(-1)
         loss = criterion(y_pred,y_actual)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -71,15 +71,15 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
         for i,batch in enumerate(iterator):
             x,trg = batch[0], batch[1].to(torch.long)
             if mode == 'inference': out= model.infer(x) 
-            else : out= model(x,trg[:,1:])
+            else : out= model(x,trg[:,:-1])
             
             y_pred = out.contiguous().view(-1,out.shape[-1])
-            y_actual = trg[:,:-1].contiguous().view(-1)
+            y_actual = trg[:,1:].contiguous().view(-1)
             loss = criterion(y_pred,y_actual)
             epoch_loss += loss.item()
             outputs = out.max(dim=-1)[1]
             if mode == 'inference' :
-                out_eval = model(x,trg[:,1:])
+                out_eval = model(x,trg[:,:-1])
                 y_pred2 = out_eval.contiguous().view(-1,out_eval.shape[-1])
                 loss2 = criterion(y_pred2,y_actual)
                 loss3 = criterion(y_pred,y_pred2)
@@ -89,9 +89,9 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
             
             for trg_j,out_j in zip(trg,outputs):
                 trg_val = idx_to_val(trg_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx)
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.pad_idx)
                 out_val = idx_to_val(out_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx)
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.pad_idx)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
 
@@ -214,7 +214,8 @@ def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,cls_freq
       normedWeights = [np.power(1 - (x / sum(cls_freq)),5)*5 for x in cls_freq]
       normedWeights = torch.FloatTensor(normedWeights).to(device)
   else : normedWeights = None
-  criterion = nn.CrossEntropyLoss(normedWeights)
+#  criterion = nn.CrossEntropyLoss(normedWeights)
+  criterion = nn.CrossEntropyLoss()
 #  criterion = nn.NLLLoss(normedWeights)
   return {
             'model' : model,
