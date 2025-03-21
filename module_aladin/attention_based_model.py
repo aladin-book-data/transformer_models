@@ -174,6 +174,7 @@ class DecoderLayer(nn.Module):
     x = self.dropout(x)+residual
     x = self.layerNorm1(x)
 
+    residual = x
     x,_  = self.attention2(q=x,k=memory,v=memory,mask=padding_mask)
     x = self.dropout(x)+residual
     x = self.layerNorm2(x)
@@ -214,9 +215,10 @@ class EncoderWithEmbedding(BasicEncoder):
   def __init__(self,d_model,head,d_ff,max_len,dropout,n_layers,device,corpus_size_in=CORPUS_SIZE,pad_idx=0):
     super().__init__(d_model,head,d_ff,max_len,dropout,n_layers,device)
     self.input_emb = nn.Embedding(corpus_size_in,d_model,padding_idx = pad_idx)
+    self.d_model = d_model
 
   def forward(self,x,src_mask):
-    input_emb = self.dropout(self.input_emb(x))
+    input_emb = self.dropout(self.input_emb(x)) * math.sqrt(self.d_model)
     return super().forward(input_emb,src_mask)
 
 class Decoder(nn.Module):
@@ -224,28 +226,29 @@ class Decoder(nn.Module):
     super().__init__()
 
     self.output_emb = nn.Embedding(corpus_size_out,d_model,padding_idx=pad_idx)
+    self.d_model = d_model
     self.pos_encoding = PositionalEncoding(d_model,max_len,device)
     self.dropout = nn.Dropout(p=dropout)
 
-    self.encoding_layers = nn.ModuleList([DecoderLayer(d_model=d_model,
+    self.decoding_layers = nn.ModuleList([DecoderLayer(d_model=d_model,
                                                        head = head, d_ff=d_ff,
                                                        dropout = dropout)
                                               for _ in range(n_layers)])
-    self.linear = nn.Linear(d_model,corpus_size_out)
+#    self.linear = nn.Linear(d_model,corpus_size_out)
 
   def forward(self,x,memory,look_ahead_mask,padding_mask):
-    output_emb = self.output_emb(x)
+    output_emb = self.output_emb(x)*math.sqrt(self.d_model)
     pos_encoding = self.pos_encoding(output_emb)
     batch_size,_,_ = output_emb.size()
     
     pos_encoding=pos_encoding.unsqueeze(dim=0).repeat(batch_size,1,1)
     x = self.dropout(output_emb + pos_encoding)
     
-    for decoder in self.encoding_layers:
+    for decoder in self.decoding_layers:
       x = decoder(x, memory,look_ahead_mask,padding_mask)
     
-    
-    return  self.linear(x)
+    return x
+#    return  self.linear(x)
 
 
 
