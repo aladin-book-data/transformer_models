@@ -71,6 +71,7 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
     model.eval()
     epoch_loss,epoch_loss2,epoch_loss3  = 0, 0, 0
     Y_actual, Y_pred = list(),list()
+    
     with torch.no_grad():
         for batch in iterator:
             x,y= batch[0], batch[1].to(torch.long)
@@ -83,10 +84,8 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
                 epoch_loss3 += criterion(y_pred2,y_pred).item()                
             
             for y_j,out_j in zip(y,outputs):
-                trg_val = idx_to_val(y_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len,model.reverse)
-                out_val = idx_to_val(out_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len,model.reverse)
+                trg_val = idx_to_val(y_j.detach().cpu().numpy(),**model.decode_info)
+                out_val = idx_to_val(out_j.detach().cpu().numpy(),**model.decode_info)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
 
