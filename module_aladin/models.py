@@ -52,8 +52,10 @@ class Transformer(nn.Module):
     self.corpus_size_out = info['y']['corpus_size']
     self.seq_len = info['X']['max_len'] 
     self.max_len = info['y']['max_len'] 
-    decode_map = info['y']['decode_map']['map']
+    decode_map = info['y']['tknize']['decode_map']['map']
     self.decode_map = decode_map
+    self.pad_pos= info['y']['tknize']['pad_pos']
+    self.reverse= info['y']['tknize']['reverse']
     self.sos_idx = info['y']['tkn']['[SOS]']
     self.eos_idx = info['y']['tkn']['[EOS]']
     self.pad_idx = info['y']['tkn']['[PAD]']    

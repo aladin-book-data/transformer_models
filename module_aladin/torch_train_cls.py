@@ -84,9 +84,9 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
             
             for y_j,out_j in zip(y,outputs):
                 trg_val = idx_to_val(y_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len)
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len,model.reverse)
                 out_val = idx_to_val(out_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len)
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len,model.reverse)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
 
