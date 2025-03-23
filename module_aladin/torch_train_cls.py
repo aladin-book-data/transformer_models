@@ -31,6 +31,7 @@ from sklearn.metrics import r2_score, mean_absolute_percentage_error
 from torcheval.metrics import functional as F_metric
 
 from module_aladin.load_data_cls import idx_to_val
+from collections import defaultdict
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
@@ -44,15 +45,19 @@ torch.set_default_device(device)
 
 locale.getpreferredencoding = lambda: "UTF-8"
 
+def get_model_output(model,src,trg,mode='evaluate'):
+    output = model(src,trg[:,:-1]) if mode!='inference' else model.infer(src)
+    y_pred_dist = output.contiguous().view(-1,output.shape[-1])
+    y_actual = trg[:,1:].contiguous().view(-1)
+    y_pred_val = None if mode=='train' else output.max(dim=-1)[1] 
+    return y_pred_dist,y_pred_val,y_actual
+
 def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
     for i, batch in enumerate(iterator):
-        x,trg = batch[0], batch[1].to(torch.long)
         optimizer.zero_grad()
-        output = model(x,trg[:,:-1])
-        y_pred = output.contiguous().view(-1,output.shape[-1])
-        y_actual = trg[:,1:].contiguous().view(-1)
+        y_pred,_,y_actual = get_model_output(model,batch[0], batch[1].to(torch.long),'train')
         loss = criterion(y_pred,y_actual)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -64,42 +69,34 @@ def train(model, iterator, optimizer, criterion, clip):
 
 def evaluate(model,iterator,criterion,mode='evaluate'):
     model.eval()
-    epoch_loss, epoch_loss2,epoch_loss3  = 0, 0, 0
+    epoch_loss,epoch_loss2,epoch_loss3  = 0, 0, 0
     Y_actual, Y_pred = list(),list()
-#    softmax = nn.Softmax(dim=-1)
     with torch.no_grad():
-        for i,batch in enumerate(iterator):
-            x,trg = batch[0], batch[1].to(torch.long)
-            if mode == 'inference': out= model.infer(x) 
-            else : out= model(x,trg[:,:-1])
+        for batch in iterator:
+            x,y= batch[0], batch[1].to(torch.long)
+            y_pred,outputs,y_actual = get_model_output(model,x,y) 
+            epoch_loss += criterion(y_pred,y_actual).item()
             
-            y_pred = out.contiguous().view(-1,out.shape[-1])
-            y_actual = trg[:,1:].contiguous().view(-1)
-            loss = criterion(y_pred,y_actual)
-            epoch_loss += loss.item()
-            outputs = out.max(dim=-1)[1]
             if mode == 'inference' :
-                out_eval = model(x,trg[:,:-1])
-                y_pred2 = out_eval.contiguous().view(-1,out_eval.shape[-1])
-                loss2 = criterion(y_pred2,y_actual)
-                loss3 = criterion(y_pred,y_pred2)
-#                loss3 = criterion(y_pred,softmax(y_pred2))
-                epoch_loss2 += loss2.item()                
-                epoch_loss3 += loss3.item()                
+                y_pred2,outputs,y_actual = get_model_output(model,x,y,'inference') 
+                epoch_loss2 += criterion(y_pred2,y_actual).item()                
+                epoch_loss3 += criterion(y_pred2,y_pred).item()                
             
-            for trg_j,out_j in zip(trg,outputs):
-                trg_val = idx_to_val(trg_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.pad_idx)
+            for y_j,out_j in zip(y,outputs):
+                trg_val = idx_to_val(y_j.detach().cpu().numpy(),
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len)
                 out_val = idx_to_val(out_j.detach().cpu().numpy(),
-                                     model.decode_map,model.sos_idx,model.eos_idx,model.pad_idx)
+                                     model.decode_map,model.sos_idx,model.eos_idx,model.max_len)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
 
     Y_actual, Y_pred = np.array(Y_actual), np.array(Y_pred)
     
     if mode == 'inference' :
-        return Y_actual, Y_pred, np.array([epoch_loss,epoch_loss2,epoch_loss3])
-    else : return Y_actual, Y_pred, epoch_loss
+        losses = np.array([epoch_loss,epoch_loss2,epoch_loss3])
+    else : losses = epoch_loss
+    
+    return Y_actual, Y_pred, losses
 
 
 def evaluate_w_score(model,iterator,criterion,**kwargs):
@@ -116,6 +113,7 @@ def run(model,optimizer, scheduler, criterion,iter_dict,
         best_loss,save_dir,expt_name,**kwargs):
     
     train_losses, valid_losses, valid_scores,lr_list = [], [], [], []
+    valid_loss_dict=defaultdict(dict)
     best_epoch=0
     train_iter,valid_iter = iter_dict['iters']['trn'],iter_dict['iters']['vld']
     
@@ -127,6 +125,7 @@ def run(model,optimizer, scheduler, criterion,iter_dict,
         _,valid_loss, valid_score = evaluate_w_score(model,valid_iter,criterion,mode=eval_mode)
         if eval_mode == 'inference' :
             valid_loss, valid_loss_etc= valid_loss[0], valid_loss[1:]
+            valid_loss_dict['inference'][step+1] = valid_loss_etc
         
         if step > warmup:scheduler.step(valid_loss)
 
@@ -147,10 +146,10 @@ def run(model,optimizer, scheduler, criterion,iter_dict,
             print('*inference*')
             valid_loss_str = valid_loss_str + ', ' + ', '.join([f'{v:.5f}' for v in valid_loss_etc]) 
         print(f'\tTrain Loss: {train_loss:.5f}\tVal Loss: {valid_loss_str}\tVal Score: {val_score_str}')
-#        print(f'\tTrain Loss: {train_loss:.3f}\tVal Loss: {valid_loss:.3f}\tVal Score: {val_score_str}')
 
+    valid_loss_dict['eval'] = valid_losses
     print('Best Epoch: ',best_epoch)
-    return model,train_losses,valid_losses, valid_scores,best_epoch,lr_list
+    return model,train_losses,valid_loss_dict, valid_scores,best_epoch,lr_list
 
 def test_n_plot(model, iterator, criterion,device,scatter=True,**kwargs):
     Y_rslt,Y_truth = get_test_rslt(model,iterator,criterion,device)
@@ -196,7 +195,7 @@ def initialize_weights(m):
     if hasattr(m, 'weight') and m.weight.dim() > 1:
         nn.init.kaiming_uniform(m.weight.data)
     
-def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,cls_freq=None,**kwargs):
+def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,loss_weight=None,**kwargs):
   print(f'The model has {count_parameters(model):,} trainable parameters')
   model.apply(initialize_weights)
   optimizer = Adam(params=model.parameters(),
@@ -210,12 +209,11 @@ def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,cls_freq
                                                    patience=patience)
 
   #criterion = nn.CrossEntropyLoss()
-  if cls_freq is not None :
-      normedWeights = [np.power(1 - (x / sum(cls_freq)),5)*5 for x in cls_freq]
-      normedWeights = torch.FloatTensor(normedWeights).to(device)
+  if loss_weight is not None :
+      normedWeights = torch.Tensor(loss_weight).to(device)
   else : normedWeights = None
-#  criterion = nn.CrossEntropyLoss(normedWeights)
-  criterion = nn.CrossEntropyLoss()
+  criterion = nn.CrossEntropyLoss(normedWeights)
+#  criterion = nn.CrossEntropyLoss()
 #  criterion = nn.NLLLoss(normedWeights)
   return {
             'model' : model,
