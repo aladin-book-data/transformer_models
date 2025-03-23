@@ -51,17 +51,18 @@ class Transformer(nn.Module):
     self.corpus_size_in = info['X']['corpus_size']
     self.corpus_size_out = info['y']['corpus_size']
     self.seq_len = info['X']['max_len'] 
-    self.max_len = info['y']['max_len'] 
-    decode_map = info['y']['tknize']['decode_map']['map']
-    self.decode_map = decode_map
-    self.pad_pos= info['y']['tknize']['pad_pos']
-    self.reverse= info['y']['tknize']['reverse']
-    self.sos_idx = info['y']['tkn']['[SOS]']
-    self.eos_idx = info['y']['tkn']['[EOS]']
-    self.pad_idx = info['y']['tkn']['[PAD]']    
     
+    self.decode_info ={
+        'decode_map':info['y']['encode']['decode_map']['map'],
+        'sos_idx':info['y']['tkn']['[SOS]'],
+        'eos_idx':info['y']['tkn']['[EOS]'],
+        'pad_idx':info['y']['tkn']['[PAD]'],
+        'max_len':info['y']['max_len'],
+        'pad_pos':info['y']['encode']['pad_pos'],
+        'reverse':info['y']['encode']['reverse'],
+    }
   def make_pad_mask(self,data,dim):
-    pad_mask = (data!=self.pad_idx).unsqueeze(1).unsqueeze(dim)
+    pad_mask = (data!=self.decode_info['pad_idx']).unsqueeze(1).unsqueeze(dim)
     return pad_mask
 
   def make_sub_mask(self,trg):
@@ -83,10 +84,10 @@ class Transformer(nn.Module):
     src_mask = self.make_pad_mask(src,2)
     enc_src = self.embd_encoder(src.to(torch.int32),src_mask)
        
-    outputs = torch.mul(torch.ones(batch_size,self.max_len).to(torch.long).to(device),34) 
+    outputs = torch.mul(torch.ones(batch_size,self.decode_info['max_len']).to(torch.long).to(device),34) 
 #    outputs = torch.zeros(batch_size,self.max_len).to(torch.long)
     outputs[:,0] = self.sos_idx
-    out_dist = torch.zeros(batch_size,self.max_len,self.corpus_size_out)
+    out_dist = torch.zeros(batch_size,self.decode_info['max_len'],self.corpus_size_out)
     
     for i in range(2,self.max_len):
         trg_mask = self.make_sub_mask(outputs[:,:i]) & self.make_pad_mask(outputs[:,:i],3)
