@@ -84,8 +84,8 @@ def evaluate(model,iterator,criterion,mode='evaluate'):
                 epoch_loss3 += criterion(y_pred2,y_pred).item()                
             
             for y_j,out_j in zip(y,outputs):
-                trg_val = idx_to_val(y_j.detach().cpu().numpy(),**model.decode_info)
-                out_val = idx_to_val(out_j.detach().cpu().numpy(),**model.decode_info)
+                trg_val = idx_to_val(y_j.detach().cpu().numpy(),**model.info)
+                out_val = idx_to_val(out_j.detach().cpu().numpy(),**model.info)
                 Y_pred.append(out_val)
                 Y_actual.append(trg_val)
 

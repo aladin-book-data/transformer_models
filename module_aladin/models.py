@@ -40,12 +40,14 @@ class TransformerDIY(nn.Module):
     super().__init__()
     self.set_corpus_info(corpus_info)
     self.embd_encoder = EncoderWithEmbedding(d_model,head,d_ff,self.seq_len,dropout,n_layers,device,
-                                             self.corpus_size_in,self.pad_idx)
-    self.decoder = Decoder(d_model,head,d_ff,self.max_len,dropout,n_layers,device,
-                           self.corpus_size_out,self.pad_idx)
+                                             self.corpus_size_in,self.info['pad_idx'])
+    self.decoder = Decoder(d_model,head,d_ff,self.info['max_len'],dropout,n_layers,device,
+                           self.corpus_size_out,self.info['pad_idx'])
     self.relu = nn.ReLU()
     self.dropout = nn.Dropout(dropout)
-    self.linear = nn.Linear(d_model,self.corpus_size_out)
+    self.lin = nn.Linear(d_model,self.corpus_size_out)
+    self.relu = nn.ReLU()
+    self.log_softmax = nn.LogSoftmax(dim=-1)
   
   def set_corpus_info(self,info):
     self.corpus_size_in = info['X']['corpus_size']
@@ -85,7 +87,7 @@ class TransformerDIY(nn.Module):
     mem = self.embd_encoder(src.to(torch.long),src_mask)
     preds = torch.LongTensor([self.info['sos_idx']]*src.size(0)).to(device).unsqueeze(1)
     sos_dist = np.zeros((src.size(0),1,self.corpus_size_out))
-    sos_dist[:,:,self.sos_idx] = 1
+    sos_dist[:,:,self.info['sos_idx']] = 1
     pred_dist = self.log_softmax(torch.tensor(sos_dist,dtype=torch.float32)).to(device)
 
     for _ in range(self.info['max_len']-1):
