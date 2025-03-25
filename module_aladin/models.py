@@ -35,7 +35,7 @@ torch.set_default_device(device)
 
 locale.getpreferredencoding = lambda: "UTF-8"
 
-class Transformer(nn.Module):
+class TransformerDIY(nn.Module):
   def __init__(self,d_model,head,d_ff,dropout,n_layers,corpus_info):
     super().__init__()
     self.set_corpus_info(corpus_info)
@@ -52,7 +52,8 @@ class Transformer(nn.Module):
     self.corpus_size_out = info['y']['corpus_size']
     self.seq_len = info['X']['max_len'] 
     
-    self.decode_info ={
+    self.info ={
+        'decode_map_X':info['X']['encode']['decode_map']['map'],
         'decode_map':info['y']['encode']['decode_map']['map'],
         'sos_idx':info['y']['tkn']['[SOS]'],
         'eos_idx':info['y']['tkn']['[EOS]'],
@@ -62,38 +63,37 @@ class Transformer(nn.Module):
         'reverse':info['y']['encode']['reverse'],
     }
   def make_pad_mask(self,data,dim):
-    pad_mask = (data!=self.decode_info['pad_idx']).unsqueeze(1).unsqueeze(dim)
+    pad_mask = (data!=self.info['pad_idx']).unsqueeze(1).unsqueeze(dim)
     return pad_mask
 
   def make_sub_mask(self,trg):
     trg_len = trg.shape[1]
     trg_sub_mask = torch.tril(torch.ones(trg_len,trg_len))
-    return trg_sub_mask.type(torch.bool).to(device)
-  #bool로 되어있어서 문제가 되는 것은 아닌지? 하지만 0 == False긴 하니깐 문제 없을지도
-  #unsqueeze(1) 가 안되어있는게 문제 일지도
+    return trg_sub_mask.type(torch.long).to(device)
 
-  def forward(self,src,trg): #차원 체크해봐야 함
+  def forward(self,src,trg):
     src_mask = self.make_pad_mask(src,2)
     trg_mask = self.make_pad_mask(trg,3) & self.make_sub_mask(trg)
-    enc_src = self.embd_encoder(src.to(torch.int32),src_mask)
-    out = self.decoder(trg.to(torch.int32),enc_src,trg_mask,src_mask)
-    return self.relu(self.linear(out))
+    enc_src = self.embd_encoder(src.to(torch.long),src_mask)
+    out = self.decoder(trg.to(torch.long),enc_src,trg_mask,src_mask)
+    out = self.relu(self.lin(out))
+    return self.log_softmax(out)
 
   def infer(self,src):
-    batch_size,_ = src.size()
+    #greedy decoding
     src_mask = self.make_pad_mask(src,2)
-    enc_src = self.embd_encoder(src.to(torch.int32),src_mask)
-       
-    outputs = torch.mul(torch.ones(batch_size,self.decode_info['max_len']).to(torch.long).to(device),34) 
-#    outputs = torch.zeros(batch_size,self.max_len).to(torch.long)
-    outputs[:,0] = self.sos_idx
-    out_dist = torch.zeros(batch_size,self.decode_info['max_len'],self.corpus_size_out)
-    
-    for i in range(2,self.max_len):
-        trg_mask = self.make_sub_mask(outputs[:,:i]) & self.make_pad_mask(outputs[:,:i],3)
-        out = self.decoder(outputs[:,:i],enc_src,trg_mask,src_mask)
-        out = self.relu(self.linear(out))
-        val = out[:,-1,:].max(dim=-1)
-        outputs[:,i],out_dist[:,i] = val[1],out[:,-1,:]
-    
-    return out_dist
+    mem = self.embd_encoder(src.to(torch.long),src_mask)
+    preds = torch.LongTensor([self.info['sos_idx']]*src.size(0)).to(device).unsqueeze(1)
+    sos_dist = np.zeros((src.size(0),1,self.corpus_size_out))
+    sos_dist[:,:,self.sos_idx] = 1
+    pred_dist = self.log_softmax(torch.tensor(sos_dist,dtype=torch.float32)).to(device)
+
+    for _ in range(self.info['max_len']-1):
+      trg_mask = self.make_pad_mask(preds,3) & self.make_sub_mask(preds)
+      out = self.decoder(preds,mem,trg_mask,src_mask)
+      y_pred = self.log_softmax(self.relu(self.lin(out)))
+      t_pred = torch.argmax(y_pred[:,-1,:],dim=-1,keepdim=True)
+      preds = torch.cat([preds,t_pred],dim=1)
+      pred_dist = torch.cat([pred_dist,y_pred[:,-1,:].unsqueeze(1)],dim=1)
+
+    return pred_dist[:,1:]#,preds

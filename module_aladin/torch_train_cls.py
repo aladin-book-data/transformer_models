@@ -212,8 +212,6 @@ def trainer_setting(model,init_lr,weight_decay,adam_eps,factor,patience,loss_wei
       normedWeights = torch.Tensor(loss_weight).to(device)
   else : normedWeights = None
   criterion = nn.CrossEntropyLoss(normedWeights)
-#  criterion = nn.CrossEntropyLoss()
-#  criterion = nn.NLLLoss(normedWeights)
   return {
             'model' : model,
             'optimizer' : optimizer,

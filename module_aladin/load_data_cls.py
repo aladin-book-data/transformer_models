@@ -82,6 +82,6 @@ def idx_to_val(data,decode_map,sos_idx,eos_idx,max_len,pad_idx=0,pad_pos='post',
   try : return int(''.join(val))
   except : return 0
   
-def val_to_price(x):
+def unzip_log_val(x):
   temp = np.power(10,x/10000)
   return np.round(temp,-2)
