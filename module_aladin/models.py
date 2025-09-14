@@ -1,0 +1,101 @@
+import os, natsort, re
+from tqdm import tqdm
+import time, random
+
+
+from module_aladin.config import roles, parens, custom_hanja
+from module_aladin.attention_based_model import EncoderWithEmbedding, Decoder
+
+
+from itertools import repeat, chain
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import os
+
+
+import torch
+from torch.utils.data import DataLoader
+import time
+from torch import nn, optim
+from torch.optim import Adam
+import locale
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["TORCH_USE_CUDA_DSA"] = '1'
+
+CORPUS_SIZE = 33700
+
+# GPU device setting
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+torch.set_default_device(device)
+
+locale.getpreferredencoding = lambda: "UTF-8"
+
+class TransformerDIY(nn.Module):
+  def __init__(self,d_model,head,d_ff,dropout,n_layers,corpus_info):
+    super().__init__()
+    self.set_corpus_info(corpus_info)
+    self.embd_encoder = EncoderWithEmbedding(d_model,head,d_ff,self.seq_len,dropout,n_layers,device,
+                                             self.corpus_size_in,self.info['pad_idx'])
+    self.decoder = Decoder(d_model,head,d_ff,self.info['max_len'],dropout,n_layers,device,
+                           self.corpus_size_out,self.info['pad_idx'])
+    self.relu = nn.ReLU()
+    self.dropout = nn.Dropout(dropout)
+    self.lin = nn.Linear(d_model,self.corpus_size_out)
+    self.relu = nn.ReLU()
+    self.log_softmax = nn.LogSoftmax(dim=-1)
+  
+  def set_corpus_info(self,info):
+    self.corpus_size_in = info['X']['corpus_size']
+    self.corpus_size_out = info['y']['corpus_size']
+    self.seq_len = info['X']['max_len'] 
+    
+    self.info ={
+        'decode_map_X':info['X']['encode']['decode_map']['map'],
+        'decode_map':info['y']['encode']['decode_map']['map'],
+        'sos_idx':info['y']['tkn']['[SOS]'],
+        'eos_idx':info['y']['tkn']['[EOS]'],
+        'pad_idx':info['y']['tkn']['[PAD]'],
+        'max_len':info['y']['max_len'],
+        'pad_pos':info['y']['encode']['pad_pos'],
+        'reverse':info['y']['encode']['reverse'],
+    }
+  def make_pad_mask(self,data,dim):
+    pad_mask = (data!=self.info['pad_idx']).unsqueeze(1).unsqueeze(dim)
+    return pad_mask
+
+  def make_sub_mask(self,trg):
+    trg_len = trg.shape[1]
+    trg_sub_mask = torch.tril(torch.ones(trg_len,trg_len))
+    return trg_sub_mask.type(torch.long).to(device)
+
+  def forward(self,src,trg):
+    src_mask = self.make_pad_mask(src,2)
+    trg_mask = self.make_pad_mask(trg,3) & self.make_sub_mask(trg)
+    enc_src = self.embd_encoder(src.to(torch.long),src_mask)
+    out = self.decoder(trg.to(torch.long),enc_src,trg_mask,src_mask)
+    out = self.relu(self.lin(out))
+    return self.log_softmax(out)
+
+  def infer(self,src):
+    #greedy decoding
+    src_mask = self.make_pad_mask(src,2)
+    mem = self.embd_encoder(src.to(torch.long),src_mask)
+    preds = torch.LongTensor([self.info['sos_idx']]*src.size(0)).to(device).unsqueeze(1)
+    sos_dist = np.zeros((src.size(0),1,self.corpus_size_out))
+    sos_dist[:,:,self.info['sos_idx']] = 1
+    pred_dist = self.log_softmax(torch.tensor(sos_dist,dtype=torch.float32)).to(device)
+
+    for _ in range(self.info['max_len']-1):
+      trg_mask = self.make_pad_mask(preds,3) & self.make_sub_mask(preds)
+      out = self.decoder(preds,mem,trg_mask,src_mask)
+      y_pred = self.log_softmax(self.relu(self.lin(out)))
+      t_pred = torch.argmax(y_pred[:,-1,:],dim=-1,keepdim=True)
+      preds = torch.cat([preds,t_pred],dim=1)
+      pred_dist = torch.cat([pred_dist,y_pred[:,-1,:].unsqueeze(1)],dim=1)
+
+    return pred_dist[:,1:]#,preds

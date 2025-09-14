@@ -4,7 +4,7 @@ import os,re
 from tqdm import tqdm
 import sys
 
-PRJCT_PATH = '/home/doeun/code/AI/ESTSOFT2024/workspace/2.project_text/aladin_usedbook/'
+PRJCT_PATH = '/home/doeun/code/AI/ESTSOFT2024/workspace/2.project_text/transformer_models/'
 RSLT_DIR = PRJCT_PATH + 'processed/'
 
 sys.path.append(PRJCT_PATH)
@@ -12,6 +12,13 @@ sys.path.append(PRJCT_PATH)
 from module_aladin.config import col_name_dict, roman_number, special_chr, paren_patterns
 from module_aladin.nlp import erase_num_comma, change_num2year, translate_hanja, find_patterns, clear_patterns
 from module_aladin.nlp import replace_by_dict, extract_author1, erase_role
+
+def conds_booksets(titles:pd.Series):
+    pats = [r'전\d+권', r'\d+[\~,\-]\d+권']
+    marks=['세트','묶음','패키지']
+    cond0 = sum([titles.str.count(pat) for pat in pats]) > 0
+    cond1 = titles.apply(lambda x : len(set(x.split(' ')).intersection(set(marks)))>0)
+    return cond0 | cond1
 
 def process_bookname(titles):
     titles = titles.apply(erase_num_comma)
@@ -63,6 +70,8 @@ if __name__ == '__main__':
     
     rslt = bookinfo.copy()[cols_in]
 
+    cond_sets = conds_booksets(bookinfo.BName)
+
     #도서명
     rslt['BName'],rslt['BName_sub'] = process_bookname(bookinfo['BName'])
 
@@ -81,6 +90,10 @@ if __name__ == '__main__':
     new_cols.insert(2,'BName_sub')
     rslt = rslt[new_cols]
 
-    file_name = 'bookinfo_ver{}.csv'.format(1.0)
+    file_name = 'bookinfo_ver{}_single.csv'.format(2.0)
     save_path = os.path.join(RSLT_DIR,file_name)
-    rslt.to_csv(save_path,index=False)
+    rslt[~cond_sets].to_csv(save_path,index=False)
+    
+    file_name = 'bookinfo_ver{}_sets.csv'.format(2.0)
+    save_path = os.path.join(RSLT_DIR,file_name)
+    rslt[cond_sets].to_csv(save_path,index=False)
